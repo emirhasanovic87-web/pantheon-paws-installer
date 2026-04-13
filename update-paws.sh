@@ -1,4 +1,3 @@
-cat > /opt/paws-api/dist/update-paws.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 

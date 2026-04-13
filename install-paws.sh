@@ -1,4 +1,3 @@
-cat > /opt/paws-api/dist/install-paws.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
