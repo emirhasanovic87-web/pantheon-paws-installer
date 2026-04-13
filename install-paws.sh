@@ -20,6 +20,42 @@ require_root() {
   fi
 }
 
+has_tty() {
+  [ -r /dev/tty ]
+}
+
+prompt_with_default() {
+  local prompt="$1"
+  local default="$2"
+  local value=""
+
+  if has_tty; then
+    read -r -p "$prompt [$default]: " value < /dev/tty || true
+  fi
+
+  if [ -z "$value" ]; then
+    echo "$default"
+  else
+    echo "$value"
+  fi
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local value=""
+
+  if has_tty; then
+    read -r -p "$prompt [$default]: " value < /dev/tty || true
+  fi
+
+  if [ -z "$value" ]; then
+    echo "$default"
+  else
+    echo "$value"
+  fi
+}
+
 detect_os() {
   if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -79,18 +115,6 @@ ensure_docker() {
         fail "Docker Compose plugin nije instaliran."
         ;;
     esac
-  fi
-}
-
-prompt_with_default() {
-  local prompt="$1"
-  local default="$2"
-  local value
-  read -r -p "$prompt [$default]: " value
-  if [ -z "$value" ]; then
-    echo "$default"
-  else
-    echo "$value"
   fi
 }
 
@@ -185,8 +209,8 @@ main() {
   echo "Način pristupa:"
   echo "  1) Localhost only (127.0.0.1) - preporučeno za Cloudflare / reverse proxy"
   echo "  2) Private IP adresa - LAN / VPN / Tailscale"
-  read -r -p "Odaberite opciju [1]: " bind_choice
-  bind_choice="${bind_choice:-1}"
+
+  bind_choice="$(prompt_with_default 'Odaberite opciju' '1')"
 
   case "$bind_choice" in
     1)
@@ -206,8 +230,7 @@ main() {
       ;;
   esac
 
-  read -r -p "Treba li docker login prije pull-a? (y/N): " docker_login_choice
-  docker_login_choice="${docker_login_choice:-N}"
+  docker_login_choice="$(prompt_yes_no 'Treba li docker login prije pull-a? (y/N)' 'N')"
 
   mkdir -p "$install_dir"
   mkdir -p "$install_dir/keys"

@@ -19,11 +19,35 @@ require_root() {
   fi
 }
 
+has_tty() {
+  [ -r /dev/tty ]
+}
+
 prompt_with_default() {
   local prompt="$1"
   local default="$2"
-  local value
-  read -r -p "$prompt [$default]: " value
+  local value=""
+
+  if has_tty; then
+    read -r -p "$prompt [$default]: " value < /dev/tty || true
+  fi
+
+  if [ -z "$value" ]; then
+    echo "$default"
+  else
+    echo "$value"
+  fi
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local value=""
+
+  if has_tty; then
+    read -r -p "$prompt [$default]: " value < /dev/tty || true
+  fi
+
   if [ -z "$value" ]; then
     echo "$default"
   else
@@ -43,7 +67,7 @@ extract_current_image() {
 
 extract_current_port() {
   local compose_file="$1"
-  awk -F: '/ports:/ {found=1; next} found && /- / {gsub(/[" ]/, "", $0); print $2; exit}' "$compose_file"
+  awk -F: '/ports:/ {found=1; next} found && /- / {gsub(/[" ]/, "", $0); print $(NF-1); exit}' "$compose_file"
 }
 
 update_compose_image() {
@@ -74,9 +98,7 @@ main() {
   echo "Trenutni port:  $current_port"
 
   new_image="$(prompt_with_default 'Novi image' "$current_image")"
-
-  read -r -p "Treba li docker login prije pull-a? (y/N): " docker_login_choice
-  docker_login_choice="${docker_login_choice:-N}"
+  docker_login_choice="$(prompt_yes_no 'Treba li docker login prije pull-a? (y/N)' 'N')"
 
   if [[ "$docker_login_choice" =~ ^[Yy]$ ]]; then
     docker_username="$(prompt_with_default 'Docker username' 'emirhasanovic')"
