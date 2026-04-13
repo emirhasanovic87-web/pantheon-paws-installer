@@ -129,6 +129,5 @@ main() {
 }
 
 main "$@"
-EOF
 
 chmod +x /opt/paws-api/dist/update-paws.sh
