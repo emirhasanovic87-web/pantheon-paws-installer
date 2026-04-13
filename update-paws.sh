@@ -1,3 +1,4 @@
+cat > /opt/paws-api/dist/update-paws.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -129,3 +130,6 @@ main() {
 }
 
 main "$@"
+EOF
+
+chmod +x /opt/paws-api/dist/update-paws.sh

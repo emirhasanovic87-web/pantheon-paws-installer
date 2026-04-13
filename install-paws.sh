@@ -1,3 +1,4 @@
+cat > /opt/paws-api/dist/install-paws.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -269,3 +270,6 @@ main() {
 }
 
 main "$@"
+EOF
+
+chmod +x /opt/paws-api/dist/install-paws.sh
