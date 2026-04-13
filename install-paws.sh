@@ -269,6 +269,5 @@ main() {
 }
 
 main "$@"
-EOF
 
 chmod +x /opt/paws-api/dist/install-paws.sh
