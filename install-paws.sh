@@ -216,6 +216,27 @@ write_host_mode_json(){
 EOF_JSON
 }
 
+validate_json() {
+  local file="$1"
+
+  if command -v python3 >/dev/null 2>&1; then
+    log "Validiram appsettings.json"
+    if ! python3 -m json.tool "$file" >/dev/null 2>&1; then
+      fail "appsettings.json nije validan JSON. Instalacija prekinuta."
+    fi
+  else
+    log "Upozorenje: python3 nije pronađen, JSON validacija je preskočena."
+  fi
+}
+
+sanity_check_json() {
+  local file="$1"
+
+  grep -q '"PADBContext": "' "$file" || fail "PADBContext nije pronađen u appsettings.json"
+  grep -q '"AuthType": "' "$file" || fail "AuthType nije pronađen u appsettings.json"
+  grep -q '"CustomCrypt": 1' "$file" || fail "CustomCrypt nije postavljen na 1"
+}
+
 main(){
   require_root
   ensure_docker
