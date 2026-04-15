@@ -85,14 +85,20 @@ validate_ip(){
 }
 
 choose_auth_type(){
-  echo
-  echo "Odaberite AuthType:"
-  echo "  1) atNone  - bez autentikacije"
-  echo "  2) atToken - token autentikacija"
-  echo "  3) atUser  - user autentikacija"
-  echo "Preporuka: ako niste sigurni, odaberite 2 (atToken)"
   local choice
-  choice="$(prompt "Odabir" "2")"
+
+  if has_tty; then
+    echo "" > /dev/tty
+    echo "Odaberite AuthType:" > /dev/tty
+    echo "  1) atNone  - bez autentikacije" > /dev/tty
+    echo "  2) atToken - token autentikacija" > /dev/tty
+    echo "  3) atUser  - user autentikacija" > /dev/tty
+    echo "Preporuka: ako niste sigurni, odaberite 2 (atToken)" > /dev/tty
+  fi
+
+  read -r -p "Odabir [2]: " choice < /dev/tty || true
+  choice="${choice:-2}"
+
   case "$choice" in
     1) echo "atNone" ;;
     2) echo "atToken" ;;
