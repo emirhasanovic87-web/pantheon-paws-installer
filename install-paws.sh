@@ -5,181 +5,73 @@ APP_NAME="paws-api"
 DEFAULT_IMAGE="emirhasanovic/paws-api:10.47.10"
 DEFAULT_INSTALL_DIR="/opt/paws-api"
 
-log() {
-  echo "==> $1"
+log(){ echo "==> $1"; }
+fail(){ echo "ERROR: $1" >&2; exit 1; }
+
+has_tty(){ [ -r /dev/tty ]; }
+
+prompt(){
+  local msg="$1" def="$2" val=""
+  if has_tty; then read -r -p "$msg [$def]: " val < /dev/tty || true; fi
+  echo "${val:-$def}"
 }
 
-fail() {
-  echo "ERROR: $1" >&2
-  exit 1
-}
-
-require_root() {
-  if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-    fail "Pokreni skriptu kao root ili sa sudo."
-  fi
-}
-
-has_tty() {
-  [ -r /dev/tty ]
-}
-
-prompt_with_default() {
-  local prompt="$1"
-  local default="$2"
-  local value=""
-
+prompt_secret(){
+  local msg="$1" val=""
   if has_tty; then
-    read -r -p "$prompt [$default]: " value < /dev/tty || true
+    read -r -s -p "$msg: " val < /dev/tty || true
+    echo
   fi
-
-  if [ -z "$value" ]; then
-    echo "$default"
-  else
-    echo "$value"
-  fi
+  echo "$val"
 }
 
-prompt_yes_no() {
-  local prompt="$1"
-  local default="$2"
-  local value=""
-
-  if has_tty; then
-    read -r -p "$prompt [$default]: " value < /dev/tty || true
-  fi
-
-  if [ -z "$value" ]; then
-    echo "$default"
-  else
-    echo "$value"
-  fi
+require_root(){
+  [ "${EUID:-$(id -u)}" -eq 0 ] || fail "Pokreni kao root ili sudo"
 }
 
-detect_os() {
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS_ID="${ID:-unknown}"
-    OS_VERSION_CODENAME="${VERSION_CODENAME:-}"
-  else
-    OS_ID="unknown"
-    OS_VERSION_CODENAME=""
-  fi
+detect_os(){
+  . /etc/os-release
 }
 
-install_docker_debian() {
-  log "Docker nije pronađen. Instaliram Docker i Docker Compose plugin..."
+install_docker(){
+  detect_os
+  case "$ID" in
+    ubuntu|debian)
+      log "Instaliram Docker..."
+      apt-get update
+      apt-get install -y ca-certificates curl gnupg
 
-  apt-get update
-  apt-get install -y ca-certificates curl gnupg
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/$ID/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      chmod a+r /etc/apt/keyrings/docker.gpg
 
-  install -m 0755 -d /etc/apt/keyrings
+      echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \
+> /etc/apt/sources.list.d/docker.list
 
-  if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
-    curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-  fi
-
-  cat > /etc/apt/sources.list.d/docker.list <<EOF_APT
-deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${OS_ID} ${OS_VERSION_CODENAME} stable
-EOF_APT
-
-  apt-get update
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  systemctl enable docker
-  systemctl start docker
+      apt-get update
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      systemctl enable docker
+      systemctl start docker
+    ;;
+    *) fail "Podržani su Ubuntu/Debian";;
+  esac
 }
 
-ensure_docker() {
-  if ! command -v docker >/dev/null 2>&1; then
-    detect_os
-    case "$OS_ID" in
-      ubuntu|debian)
-        install_docker_debian
-        ;;
-      *)
-        fail "Automatska instalacija Docker-a podržana je samo za Ubuntu/Debian."
-        ;;
-    esac
-  fi
-
-  if ! docker compose version >/dev/null 2>&1; then
-    detect_os
-    case "$OS_ID" in
-      ubuntu|debian)
-        log "Docker Compose plugin nije pronađen. Instaliram..."
-        apt-get update
-        apt-get install -y docker-compose-plugin
-        ;;
-      *)
-        fail "Docker Compose plugin nije instaliran."
-        ;;
-    esac
-  fi
+ensure_docker(){
+  command -v docker >/dev/null || install_docker
+  docker compose version >/dev/null || apt-get install -y docker-compose-plugin
 }
 
-validate_port() {
-  local port="$1"
-  [[ "$port" =~ ^[0-9]+$ ]] || return 1
-  [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
-}
-
-validate_ip() {
-  local ip="$1"
-  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
-}
-
-write_appsettings_if_missing() {
-  local app_dir="$1"
-  if [ ! -f "$app_dir/appsettings.json" ]; then
-    log "appsettings.json ne postoji. Kreiram template."
-    cat > "$app_dir/appsettings.json" <<'EOF_JSON'
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft": "Warning",
-      "Microsoft.Hosting.Lifetime": "Information"
-    }
-  },
-  "AllowedHosts": "*",
-  "ConnectionStrings": {
-    "PADBContext": "Server=SQL_IP,PORT;Database=DB_NAME;User ID=SQL_USER;Password=SQL_PASSWORD;MultipleActiveResultSets=True;TrustServerCertificate=True;Encrypt=False"
-  },
-  "AppSettings": {
-    "Secret": "CHANGE_ME",
-    "ProtectEnthropy": "12345678901234567890123456789012",
-    "AuthType": "atNone",
-    "TokenExpiresMinutes": 5,
-    "CookieExpiresMinutes": 5,
-    "ThrowExceptionOnEmptyResultSets": false,
-    "CustomCrypt": 1,
-    "CompanyDB": "",
-    "MoveTransactionTimeoutMinutes": 5,
-    "OrderTransactionTimeoutMinutes": 5,
-    "TrustServerCertificate": true,
-    "AllowDBOnlyFromGeneratedToken": 0
-  }
-}
-EOF_JSON
-    log "Template appsettings.json kreiran. Provjeri i unesi stvarne vrijednosti."
-  fi
-}
-
-write_compose() {
-  local app_dir="$1"
-  local image_name="$2"
-  local bind_ip="$3"
-  local host_port="$4"
-
-  cat > "$app_dir/docker-compose.yml" <<EOF_COMPOSE
+write_compose(){
+  cat > "$1/docker-compose.yml" <<EOF_COMPOSE
 services:
   paws-api:
-    image: $image_name
+    image: $2
     container_name: $APP_NAME
     restart: unless-stopped
     ports:
-      - "$bind_ip:$host_port:8080"
+      - "$3:$4:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
     volumes:
@@ -188,86 +80,107 @@ services:
 EOF_COMPOSE
 }
 
-main() {
+main(){
   require_root
   ensure_docker
 
-  local install_dir image_name port bind_choice bind_ip docker_login_choice docker_username
+  install_dir=$(prompt "Install folder" "$DEFAULT_INSTALL_DIR")
+  image=$(prompt "Docker image" "$DEFAULT_IMAGE")
 
-  install_dir="$(prompt_with_default 'Install folder' "$DEFAULT_INSTALL_DIR")"
-  image_name="$(prompt_with_default 'Docker image' "$DEFAULT_IMAGE")"
-
-  while true; do
-    port="$(prompt_with_default 'Koji port želite koristiti' '8090')"
-    if validate_port "$port"; then
-      break
-    fi
-    echo "Unesite validan port 1-65535."
-  done
+  port=$(prompt "Port" "8090")
 
   echo
   echo "Način pristupa:"
-  echo "  1) Localhost only (127.0.0.1) - preporučeno za Cloudflare / reverse proxy"
-  echo "  2) Private IP adresa - LAN / VPN / Tailscale"
+  echo "1) Localhost (preporučeno za Cloudflare)"
+  echo "2) Private IP (LAN/VPN/Tailscale)"
+  bind_choice=$(prompt "Odabir" "1")
 
-  bind_choice="$(prompt_with_default 'Odaberite opciju' '1')"
+  if [ "$bind_choice" = "2" ]; then
+    bind_ip=$(prompt "Private IP" "192.168.1.10")
+  else
+    bind_ip="127.0.0.1"
+  fi
 
-  case "$bind_choice" in
-    1)
-      bind_ip="127.0.0.1"
-      ;;
-    2)
-      while true; do
-        bind_ip="$(prompt_with_default 'Unesite private IP adresu servera' '100.x.x.x')"
-        if validate_ip "$bind_ip"; then
-          break
-        fi
-        echo "Unesite validnu IPv4 adresu."
-      done
-      ;;
-    *)
-      bind_ip="127.0.0.1"
-      ;;
-  esac
+  echo
+  echo "Odaberite način rada baze:"
+  echo
+  echo "1) Single database (Default catalog)"
+  echo "   → jedna baza (najčešći slučaj)"
+  echo
+  echo "2) Multi-tenant (Host mode)"
+  echo "   → centralna baza + više klijenata"
+  echo
+  echo "Preporuka: ako niste sigurni, odaberite 1"
+  db_mode=$(prompt "Odabir" "1")
 
-  docker_login_choice="$(prompt_yes_no 'Treba li docker login prije pull-a? (y/N)' 'N')"
+  sql_host=$(prompt "SQL host" "127.0.0.1")
+  sql_port=$(prompt "SQL port" "1433")
+
+  if [ "$db_mode" = "2" ]; then
+    db_name=$(prompt "Master DB (PAW_Master)" "PAW_Master")
+  else
+    db_name=$(prompt "Database (Default catalog)" "BA_UNITIC")
+  fi
+
+  sql_user=$(prompt "SQL username" "sa")
+  sql_pass=$(prompt_secret "SQL password")
 
   mkdir -p "$install_dir"
   mkdir -p "$install_dir/keys"
 
-  write_appsettings_if_missing "$install_dir"
-  write_compose "$install_dir" "$image_name" "$bind_ip" "$port"
-
-  if [[ "$docker_login_choice" =~ ^[Yy]$ ]]; then
-    docker_username="$(prompt_with_default 'Docker username' 'emirhasanovic')"
-    docker login -u "$docker_username"
+  if [ -f "$install_dir/appsettings.json" ]; then
+    overwrite=$(prompt "Postojeći config postoji. Overwrite? (y/N)" "N")
+  else
+    overwrite="Y"
   fi
 
-  log "Pullam image: $image_name"
-  docker pull "$image_name"
+  if [[ "$overwrite" =~ ^[Yy]$ ]]; then
 
-  log "Uklanjam stari container ako postoji"
-  docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
+    if [ "$db_mode" = "2" ]; then
+      conn="Server=$sql_host,$sql_port;Database=$db_name;User ID=$sql_user;Password=$sql_pass;TrustServerCertificate=True;Encrypt=False"
+      cat > "$install_dir/appsettings.json" <<EOF_JSON
+{
+  "ConnectionStrings": {
+    "PADBContext": "$conn",
+    "HostsConnection": "$conn"
+  },
+  "AppSettings": {
+    "CustomCrypt": 1
+  }
+}
+EOF_JSON
+    else
+      conn="Server=$sql_host,$sql_port;Database=$db_name;User ID=$sql_user;Password=$sql_pass;TrustServerCertificate=True;Encrypt=False"
+      cat > "$install_dir/appsettings.json" <<EOF_JSON
+{
+  "ConnectionStrings": {
+    "PADBContext": "$conn"
+  },
+  "AppSettings": {
+    "CustomCrypt": 1
+  }
+}
+EOF_JSON
+    fi
 
-  log "Dižem PAWS API"
+    chmod 600 "$install_dir/appsettings.json"
+    log "appsettings.json generisan"
+  fi
+
+  write_compose "$install_dir" "$image" "$bind_ip" "$port"
+
+  log "Pull image"
+  docker pull "$image"
+
+  docker rm -f $APP_NAME >/dev/null 2>&1 || true
+
   cd "$install_dir"
   docker compose up -d
 
   echo
   log "Instalacija završena"
-  echo "Folder: $install_dir"
-  echo "Image:  $image_name"
-  echo "Bind:   $bind_ip:$port -> 8080"
-  echo
-  echo "Korisne komande:"
-  echo "  cd $install_dir && docker compose logs -f"
-  echo "  cd $install_dir && docker compose restart"
-  echo "  cd $install_dir && docker compose down"
-  echo "  curl http://127.0.0.1:$port/swagger/v1/swagger.json"
-  echo
-  echo "Napomena: provjeri appsettings.json prije produkcijske upotrebe."
+  echo "Bind: $bind_ip:$port"
 }
 
 main "$@"
-
 chmod +x /opt/paws-api/dist/install-paws.sh
