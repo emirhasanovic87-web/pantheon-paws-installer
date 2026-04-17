@@ -1,155 +1,284 @@
-# 🐳 Pantheon PAWS API – Linux Installer
+# 🚀 Pantheon PAWS API Installer
 
-Jednostavan i standardiziran način za deployment PAWS API-a na Linux server koristeći Docker.
+Jednostavan installer za deploy **PAWS API** na Linux server (Docker-based).
 
 ---
 
-# 🚀 Quick Install
+# 📦 Šta radi
 
-curl -sSLo install-paws.sh https://raw.githubusercontent.com/emirhasanovic87-web/pantheon-paws-installer/main/install-paws.sh
-chmod +x install-paws.sh
-./install-paws.sh
+* instalira Docker (ako nije instaliran)
+* deploya PAWS API container
+* generiše `appsettings.json`
+* podržava:
+
+  * Single DB mode
+  * Host mode (multi-tenant)
+* podržava:
+
+  * `atNone`
+  * `atToken`
+  * `atUser`
+* validira JSON prije deploya
+* ima update script (safe upgrade)
+
+---
+
+# 🚀 Instalacija (1 komanda)
+
+```bash
+curl -sSL "https://raw.githubusercontent.com/emirhasanovic87-web/pantheon-paws-installer/main/install-paws.sh" | bash
+```
+
+---
+
+# ⚙️ Tok instalacije
+
+Installer pita:
+
+* install folder
+* Docker image
+* port
+* bind mode (localhost / private IP)
+* DB mode:
+
+  * Single database
+  * Host mode
+* AuthType
+* SQL parametre
+
+---
+
+# 🧠 DB MODE
+
+## 1️⃣ Single Database
+
+Koristi se za:
+
+* jedan klijent
+* jedna baza
+
+Koristi samo:
+
+```json
+PADBContext
+```
+
+---
+
+## 2️⃣ Host Mode (Multi-tenant)
+
+Koristi se za:
+
+* više klijenata
+* centralni `PAW_Master`
+
+Koristi:
+
+```json
+PADBContext  → Pantheon user
+HostsConnection → SQL user (PAW_Master)
+```
+
+---
+
+# 🔐 AuthType
+
+## atNone
+
+✔ direktan pristup
+✔ najjednostavnije
+✔ radi odmah
+
+👉 preporučeno za start
+
+---
+
+## atToken
+
+✔ token-based auth
+❗ zahtijeva dodatni flow
+
+Redoslijed:
+
+1. `authwithtoken`
+2. `authsetDB`
+3. business endpoint
+
+---
+
+## atUser
+
+✔ user-based auth
+(rjeđe korišten)
+
+---
+
+# 📄 appsettings.json pravila
+
+## 🔴 OBAVEZNO
+
+### 1. Linux
+
+```json
+"CustomCrypt": 1
+```
+
+---
+
+### 2. Connection string format
+
+```text
+Data Source=IP,PORT;
+```
+
+NE:
+
+```text
+SERVER\INSTANCE
+```
+
+---
+
+### 3. PADBContext
+
+MORA sadržavati:
+
+```text
+MultipleActiveResultSets=True;
+App=EntityFramework;
+TrustServerCertificate=True;
+Encrypt=False;
+```
+
+---
+
+### 4. HostsConnection
+
+MORA sadržavati:
+
+```text
+TrustServerCertificate=True;
+Encrypt=False;
+```
+
+---
+
+### 5. atToken pravilo
+
+❗ Ako koristiš `atToken`:
+
+```json
+"HostsConnection" NE SMIJE biti prazan
+```
 
 ---
 
 # 🔄 Update
 
-./update-paws.sh
+## Pokretanje
+
+```bash
+curl -sSL "https://raw.githubusercontent.com/emirhasanovic87-web/pantheon-paws-installer/main/update-paws.sh" | bash
+```
 
 ---
 
-# 🐧 Supported Platforms
+## Šta radi
 
-- Ubuntu
-- Debian
-
-Za ostale Linux distribucije potrebno je ručno instalirati Docker i Docker Compose plugin.
-
----
-
-# ⚙️ Šta installer radi
-
-Installer automatski:
-
-- instalira Docker (ako nije instaliran)
-- instalira Docker Compose plugin
-- povlači PAWS API Docker image
-- kreira docker-compose.yml
-- kreira appsettings.json template (ako ne postoji)
-- pokreće container
+* backup `appsettings.json`
+* validira JSON
+* provjerava config
+* pulla novi image
+* redeploya container
 
 ---
 
-# 🌐 Način pristupa
+# 🧪 Test API
 
-Installer nudi dvije opcije:
-
-## 1. Localhost (preporučeno)
-
-127.0.0.1:PORT
-
-Idealno za:
-- Cloudflare Tunnel
-- reverse proxy
-- sigurnu produkciju
-
-## 2. Private IP
-
-PRIVATE_IP:PORT
-
-Idealno za:
-- LAN pristup
-- VPN 
-- internu mrežu
-
----
-
-# 🔐 Sigurnosna preporuka
-
-Preporučeni setup:
-
-- koristiti localhost bind (127.0.0.1)
-- izložiti servis preko Cloudflare Tunnel-a
-- ne otvarati direktno port prema internetu
-
----
-
-# 📦 Konfiguracija
-
-Nakon instalacije potrebno je urediti:
-
-/opt/paws-api/appsettings.json
-
-Primjer:
-
-{
-  "ConnectionStrings": {
-    "PADBContext": "Server=SQL_IP,PORT;Database=DB_NAME;User ID=USER;Password=PASSWORD;TrustServerCertificate=True;Encrypt=False"
-  },
-  "AppSettings": {
-    "CustomCrypt": 1
-  }
-}
-
----
-
-# 🧪 Test
-
+```bash
 curl http://127.0.0.1:8090/swagger/v1/swagger.json
-
-ili u browseru:
-
-http://SERVER_IP:PORT/swagger/index.html
+```
 
 ---
 
-# 🛠️ Korisne komande
+# 🛠 Troubleshooting
 
+## ❌ Error:
+
+```
+Format of the initialization string...
+```
+
+### Uzrok:
+
+* prazan ili nevalidan connection string
+* `HostsConnection=""` uz `atToken`
+* neispravan format `Data Source`
+
+---
+
+## ❌ Token radi, endpoint ne radi
+
+✔ problem je u token flow-u
+✔ koristi `authsetDB`
+
+---
+
+## ❌ Container ne starta
+
+```bash
+docker compose logs -f
+```
+
+---
+
+## ❌ JSON error
+
+Installer ima validaciju:
+
+```bash
+python3 -m json.tool appsettings.json
+```
+
+---
+
+# 🔧 Korisne komande
+
+```bash
 cd /opt/paws-api
-
 docker compose logs -f
 docker compose restart
 docker compose down
+docker compose ps
+```
 
 ---
 
-# 🚀 Prednosti Linux Docker deploy-a
+# 📌 Preporuka
 
-U odnosu na Windows IIS:
+Za početak:
 
-- brži deployment (par minuta)
-- jednostavna instalacija , napravljen installer script ( 1 komanda)
-- jednostavan update (1 komanda)
-- sigurniji (localhost + Cloudflare)
-- niži troškovi (bez Windows licence)
-- standardizovan deployment (Docker)
-- brži recovery (restart u par sekundi)
+```text
+AuthType = atNone
+```
 
----
+Kad sve radi → prebaci na:
 
-# 📌 Napomena
-
-Installer je interaktivan i ne preporučuje se pokretanje direktno sa:
-
-curl ... | bash
-
-Umjesto toga koristiti:
-
-curl -O install-paws.sh
-bash install-paws.sh
+```text
+atToken
+```
 
 ---
 
-# 🧾 Verzije
+# 🚀 Roadmap
 
-Docker image koristi verzionisanje:
-
-10.47.10
-10.47.11
-latest
+* auto update (version check)
+* healthcheck + rollback
+* PAW_Master auto setup
 
 ---
 
 # 👨‍💻 Autor
+
 
 Emir Hasanovic
